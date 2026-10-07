@@ -27,9 +27,8 @@ class ResPartnerRelation(models.Model):
         bypass_search_access=True,
         ondelete="cascade",
     )
-    left_partner_id_domain = fields.Binary(
+    left_partner_id_domain = fields.Json(
         compute="_compute_left_partner_id_domain",
-        default=[],
     )
     right_partner_id = fields.Many2one(
         comodel_name="res.partner",
@@ -38,9 +37,8 @@ class ResPartnerRelation(models.Model):
         bypass_search_access=True,
         ondelete="cascade",
     )
-    right_partner_id_domain = fields.Binary(
+    right_partner_id_domain = fields.Json(
         compute="_compute_right_partner_id_domain",
-        default=[],
     )
     type_id = fields.Many2one(
         comodel_name="res.partner.relation.type",
@@ -48,9 +46,8 @@ class ResPartnerRelation(models.Model):
         required=True,
         bypass_search_access=True,
     )
-    type_id_domain = fields.Binary(
+    type_id_domain = fields.Json(
         compute="_compute_type_id_domain",
-        default=[],
     )
     date_start = fields.Date("Starting date")
     date_end = fields.Date("Ending date")
@@ -102,21 +99,23 @@ class ResPartnerRelation(models.Model):
     def _onchange_type_id(self):
         """Unfortunately @api.depends does not work for unsaved changes."""
         self.ensure_one()
-        self._compute_left_partner_id_domain()
-        self._compute_right_partner_id_domain()
+        # Json fields read back lists for tuples and False for []: use the
+        # domains as built.
+        left_domain = self._get_partner_id_domain("left")
+        right_domain = self._get_partner_id_domain("right")
         result = {
             "domain": {
-                "left_partner_id": self.left_partner_id_domain,
-                "right_partner_id": self.right_partner_id_domain,
+                "left_partner_id": left_domain,
+                "right_partner_id": right_domain,
             }
         }
         # Check wether domain results in no choice or wrong choice of partners:
         warning = (
             self._check_partner_domain(
-                self.left_partner_id, self.left_partner_id_domain, self.env._("left")
+                self.left_partner_id, left_domain, self.env._("left")
             )
             or self._check_partner_domain(
-                self.right_partner_id, self.right_partner_id_domain, self.env._("right")
+                self.right_partner_id, right_domain, self.env._("right")
             )
             or {}
         )
@@ -129,7 +128,7 @@ class ResPartnerRelation(models.Model):
         """Check wether partner_domain results in empty selection
         for partner, or wrong selection of partner already selected.
         """
-        test_domain = Domain(partner_domain)
+        test_domain = Domain(partner_domain or [])
         if partner:
             test_domain &= Domain("id", "=", partner.id)
         Partner = self.env["res.partner"]
@@ -149,10 +148,9 @@ class ResPartnerRelation(models.Model):
     def _onchange_partner(self):
         """Unfortunately @api.depends does not work for unsaved changes."""
         self.ensure_one()
-        self._compute_type_id_domain()
         result = {
             "domain": {
-                "type_id": self.type_id_domain,
+                "type_id": self._get_type_id_domain(),
             }
         }
         # Check wether domain results in no choice or wrong choice for type_id.
@@ -170,7 +168,9 @@ class ResPartnerRelation(models.Model):
         self.ensure_one()
         if not self.type_id:
             return None
-        test_domain = Domain(self.type_id_domain) & Domain("id", "=", self.type_id.id)
+        test_domain = Domain(self._get_type_id_domain()) & Domain(
+            "id", "=", self.type_id.id
+        )
         RelationType = self.env["res.partner.relation.type"]
         if RelationType.search(test_domain, limit=1):
             return None
@@ -181,64 +181,52 @@ class ResPartnerRelation(models.Model):
             ),
         }
 
+    def _get_partner_id_domain(self, side):
+        """Domain of the left or right partner, mainly from type_id restrictions."""
+        self.ensure_one()
+        domain = []
+        if self.type_id:
+            contact_type = self.type_id[f"{side}_partner_type"]
+            if contact_type:
+                is_company = True if contact_type == "c" else False
+                domain.append(("is_company", "=", is_company))
+            category_id = self.type_id[f"{side}_partner_category_id"]
+            if category_id:
+                domain.append(("category_id", "=", category_id.id))
+        return domain
+
     @api.depends("type_id")
     def _compute_left_partner_id_domain(self):
-        """Set domain based mainly on type_id restrictions."""
         for this in self:
-            domain = []
-            if this.type_id:
-                contact_type = this.type_id.left_partner_type
-                if contact_type:
-                    is_company = True if contact_type == "c" else False
-                    domain.append(("is_company", "=", is_company))
-                category_id = this.type_id.left_partner_category_id
-                if category_id:
-                    domain.append(("category_id", "=", category_id.id))
-            this.left_partner_id_domain = domain
+            this.left_partner_id_domain = this._get_partner_id_domain("left")
 
     @api.depends("type_id")
     def _compute_right_partner_id_domain(self):
-        """Set domain based mainly on type_id restrictions."""
         for this in self:
-            domain = []
-            if this.type_id:
-                contact_type = this.type_id.right_partner_type
-                if contact_type:
-                    is_company = True if contact_type == "c" else False
-                    domain.append(("is_company", "=", is_company))
-                category_id = this.type_id.right_partner_category_id
-                if category_id:
-                    domain.append(("category_id", "=", category_id.id))
-            this.right_partner_id_domain = domain
+            this.right_partner_id_domain = this._get_partner_id_domain("right")
+
+    def _get_type_id_domain(self):
+        """Domain of type_id, from the left and right partner."""
+        self.ensure_one()
+        domain = []
+        for side in ("left", "right"):
+            partner = self[f"{side}_partner_id"]
+            if partner:
+                partner_type = "c" if partner.is_company else "p"
+                domain += [
+                    "|",
+                    (f"{side}_partner_type", "=", False),
+                    (f"{side}_partner_type", "=", partner_type),
+                    "|",
+                    (f"{side}_partner_category_id", "=", False),
+                    (f"{side}_partner_category_id", "in", partner.category_id.ids),
+                ]
+        return domain
 
     @api.depends("left_partner_id", "right_partner_id")
     def _compute_type_id_domain(self):
-        """Set domain based on left and right partner."""
         for this in self:
-            domain = []
-            left_partner = this.left_partner_id
-            if left_partner:
-                partner_type = "c" if left_partner.is_company else "p"
-                domain += [
-                    "|",
-                    ("left_partner_type", "=", False),
-                    ("left_partner_type", "=", partner_type),
-                    "|",
-                    ("left_partner_category_id", "=", False),
-                    ("left_partner_category_id", "in", left_partner.category_id.ids),
-                ]
-            right_partner = this.right_partner_id
-            if right_partner:
-                partner_type = "c" if right_partner.is_company else "p"
-                domain += [
-                    "|",
-                    ("right_partner_type", "=", False),
-                    ("right_partner_type", "=", partner_type),
-                    "|",
-                    ("right_partner_category_id", "=", False),
-                    ("right_partner_category_id", "in", right_partner.category_id.ids),
-                ]
-            this.type_id_domain = domain
+            this.type_id_domain = this._get_type_id_domain()
 
     @api.depends(
         "left_partner_id.name",

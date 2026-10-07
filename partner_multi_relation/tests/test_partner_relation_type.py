@@ -102,6 +102,7 @@ class TestPartnerRelationType(TestPartnerRelationCommon):
             {
                 "name": "People's Will",
                 "is_company": True,
+                "vat": "BE0477472701",
                 "ref": "PPLWIL",
                 "category_id": [(4, category_party.id)],
             }
