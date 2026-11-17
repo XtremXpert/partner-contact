@@ -8,14 +8,18 @@ from odoo.addons.base.tests.common import BaseCommon
 
 
 class TestDeduplicateFilter(BaseCommon):
+    # Odoo 20 restricts the merge wizard to the partner managers.
+    _test_user_groups = ("base.group_user", "base.group_partner_manager")
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        # Odoo 20 computes is_company from the VAT.
         cls.partner_1 = cls.env["res.partner"].create(
             {
                 "name": "Partner 1",
                 "email": "partner1@example.org",
-                "is_company": True,
+                "vat": "BE0477472701",
                 "parent_id": False,
             }
         )
@@ -24,7 +28,6 @@ class TestDeduplicateFilter(BaseCommon):
             {
                 "name": "Partner 2",
                 "email": "partner2@example.org",
-                "is_company": False,
                 "parent_id": cls.partner_1.id,
             }
         )
@@ -33,7 +36,6 @@ class TestDeduplicateFilter(BaseCommon):
             {
                 "name": "Partner 3",
                 "email": "partner3@example.org",
-                "is_company": False,
                 "parent_id": False,
             }
         )
