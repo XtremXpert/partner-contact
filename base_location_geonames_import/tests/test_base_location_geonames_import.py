@@ -20,8 +20,9 @@ class TestBaseLocationGeonamesImport(common.TransactionCase):
         cls.wizard = cls.env["city.zip.geonames.import"].create(
             {"country_ids": [(6, 0, [cls.country.id])]}
         )
+        # Odoo 20 enforces the two characters of the country code.
         cls.wrong_country = cls.env["res.country"].create(
-            {"name": "Wrong country", "code": "ZZYYXX"}
+            {"name": "Wrong country", "code": "ZZ"}
         )
         cls.wrong_wizard = cls.env["city.zip.geonames.import"].create(
             {"country_ids": [(6, 0, [cls.wrong_country.id])]}
