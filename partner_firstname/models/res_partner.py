@@ -30,7 +30,7 @@ class ResPartner(models.Model):
 
     # @api.depends(lambda self: self._get_fields_depend_firstname_lastname_required())
     def _compute_firstname_lastname_required(self):
-        for partner in self.filtered(lambda x: x.is_company or not x.type == "contact"):
+        for partner in self.filtered(lambda x: x.is_company or x.type != "contact"):
             partner.firstname_required = False
             partner.lastname_required = False
 
@@ -59,7 +59,7 @@ class ResPartner(models.Model):
         created_partners = self.browse()
         for vals in vals_list:
             partner_context = dict(self.env.context)
-            is_company = vals.get("company_type") == "company"
+            is_company = self._is_company_from_vals(vals)
             if not is_company and self.name_fields_in_vals(vals) and "name" in vals:
                 del vals["name"]
                 partner_context.pop("default_name", None)
@@ -86,6 +86,31 @@ class ResPartner(models.Model):
                 ResPartner, self.with_context(partner_context)
             ).create([vals])
         return created_partners
+
+    def copy_data(self, default=None):
+        """Keep the copied name parts instead of the full name.
+
+        Odoo 20 copies ``name`` along with ``firstname``/``lastname``; the name
+        would then be inverted again in :meth:`create` and overwrite the parts
+        that :meth:`copy` carefully prefixes with "(copy)".
+        """
+        vals_list = super().copy_data(default)
+        for vals in vals_list:
+            if vals.get("firstname") or vals.get("lastname"):
+                vals.pop("name", None)
+        return vals_list
+
+    @api.model
+    def _is_company_from_vals(self, vals):
+        """Tell whether the partner being created will be a company.
+
+        Odoo 20 replaced ``company_type`` with a computed ``is_company`` based
+        on the identifiers (see ``_compute_is_company``), so the name splitting
+        has to rely on the same heuristic before the record exists.
+        """
+        vat = vals.get("vat")
+        has_vat = bool(vat and vat not in ("/", "na", "NA"))
+        return has_vat and not vals.get("parent_id")
 
     def get_extra_default_copy_values(self):
         """Method to add '(copy)' suffix to lastname or firstname, depending on name

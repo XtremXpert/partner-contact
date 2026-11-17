@@ -87,7 +87,8 @@ class UserCase(TransactionCase, MailInstalled):
 
     def test_copy_multiple_names_company(self):
         partner = self.original_multinames.partner_id
-        partner.is_company = True
+        # Odoo 20 computes is_company from the VAT.
+        partner.vat = "BE0477472701"
         copy = partner.copy()
         self.assertRecordValues(
             copy,

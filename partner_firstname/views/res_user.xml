@@ -4,24 +4,21 @@
         <field name="model">res.users</field>
         <field name="inherit_id" ref="base.view_users_form" />
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='name']" position="attributes">
-                <attribute name="readonly">True</attribute>
-                <attribute name="required">False</attribute>
+            <xpath expr="//h1/field[@name='name']" position="attributes">
+                <attribute name="readonly">1</attribute>
+                <attribute name="required">0</attribute>
             </xpath>
-            <xpath expr="//field[@name='email']" position="after">
+            <xpath expr="//div[@name='email']" position="after">
                 <group>
                     <field
                         name="lastname"
-                        invisible="not form_has_lastname_first"
-                        required="form_has_lastname_first and lastname_required"
+                        required="lastname_required"
                     />
                     <field name="firstname" required="firstname_required" />
-                    <field
-                        name="lastname"
-                        invisible="form_has_lastname_first"
-                        required="not form_has_lastname_first and lastname_required"
-                    />
                 </group>
+                <field name="form_has_lastname_first" invisible="1" />
+                <field name="firstname_required" invisible="1" />
+                <field name="lastname_required" invisible="1" />
             </xpath>
         </field>
     </record>
